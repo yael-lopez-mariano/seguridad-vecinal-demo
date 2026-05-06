@@ -1,6 +1,7 @@
 // src/app/pages/usuarios/UsuarioForm.jsx
 import { useEffect, useState } from "react";
 import { parseTipoUsuarioID } from "../../types/tiposUsuario";
+import { showWarning } from "../../utils/swal";
 
 const emptyForm = {
   usuarioID: null,
@@ -61,8 +62,33 @@ export default function UsuarioForm({
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!form.tipoUsuarioID) {
+      await showWarning("Datos incompletos", "Selecciona un tipo de usuario.");
+      return;
+    }
+    if (!form.nombre.trim()) {
+      await showWarning("Datos incompletos", "El nombre del usuario es requerido.");
+      return;
+    }
+    if (!form.apellidoPaterno.trim()) {
+      await showWarning("Datos incompletos", "El apellido paterno es requerido.");
+      return;
+    }
+    if (!form.email.trim()) {
+      await showWarning("Datos incompletos", "El correo electronico es requerido.");
+      return;
+    }
+    if (!form.usuarioID && !form.password.trim()) {
+      await showWarning(
+        "Datos incompletos",
+        "La contrasena es requerida al crear un usuario."
+      );
+      return;
+    }
+
     // Mandamos el form tal cual al padre
     onSubmit({
       ...form,
@@ -233,14 +259,14 @@ export default function UsuarioForm({
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 bg-white hover:bg-slate-50"
+          className="rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-300"
         >
           Cancelar
         </button>
         <button
           type="submit"
           disabled={saving}
-          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+          className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
         >
           {saving
             ? "Guardando..."

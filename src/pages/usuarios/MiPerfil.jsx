@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { UsuariosAPI } from "../../services/usuarios.api";
 import { session } from "../../utils/session";
+import { showError, showSuccess } from "../../utils/swal";
 
 export default function MiPerfil() {
   const navigate = useNavigate();
@@ -79,10 +80,14 @@ export default function MiPerfil() {
         ultimosDigitos: "",
         fechaVencimiento: "2030-01-01", // o déjalo fuera si no es requerido
       });
-      alert("Perfil actualizado correctamente");
+      await showSuccess(
+        "Usuario actualizado",
+        "Los cambios se guardaron correctamente."
+      );
     } catch (err) {
       console.error("Error al guardar el perfil:", err); //
       setError("No se pudo guardar tu perfil");
+      showError("Error", "Ocurrio un problema al procesar la accion.");
     } finally {
       setSaving(false);
     }

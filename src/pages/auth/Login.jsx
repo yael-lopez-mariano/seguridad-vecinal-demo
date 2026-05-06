@@ -1,11 +1,11 @@
 import { useAuth } from "@/context/AuthContext";
-import React, { useState, useEffect } from "react";
+import { showAutoSuccess, showError, showWarning } from "@/utils/swal";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const { login, loading, user } = useAuth();
   const navigate = useNavigate();
-  const [error, setError] = useState("");
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -19,17 +19,47 @@ export default function Login() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    setError("");
 
-    if (!form.email || !form.password) {
-      setError("Por favor, completa todos los campos");
+    const usuario = form.email.trim();
+    const password = form.password;
+
+    if (!usuario) {
+      await showWarning("Usuario requerido", "Ingresa tu usuario para continuar.");
       return;
     }
 
-    const success = await login(form.email, form.password);
+    if (!password) {
+      await showWarning(
+        "Contraseña requerida",
+        "Ingresa tu contraseña para continuar."
+      );
+      return;
+    }
 
-    if (success) {
-      navigate("/admin/dashboard");
+    try {
+      const success = await login(usuario, password);
+
+      if (success) {
+        await showAutoSuccess(
+          "Inicio de sesión correcto",
+          "Bienvenido al sistema.",
+          900
+        );
+        navigate("/admin/dashboard");
+      }
+    } catch (error) {
+      if (error?.code === "INVALID_CREDENTIALS") {
+        await showError(
+          "Credenciales incorrectas",
+          "Verifica tu usuario y contraseña."
+        );
+        return;
+      }
+
+      await showError(
+        "Error al iniciar sesión",
+        "Ocurrió un problema al validar tus datos."
+      );
     }
   };
 
@@ -54,13 +84,7 @@ export default function Login() {
           Inicia sesión
         </h1>
 
-        {error && (
-          <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </div>
-        )}
-
-        <form className="space-y-4" onSubmit={onSubmit}>
+        <form className="space-y-4" onSubmit={onSubmit} noValidate>
           <div>
             <label htmlFor="usuario" className="block mb-1 font-medium">
               Usuario
@@ -72,7 +96,6 @@ export default function Login() {
               placeholder="Ingrese su usuario"
               className="input"
               autoComplete="username"
-              required
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
@@ -89,7 +112,6 @@ export default function Login() {
               placeholder="Ingresa tu contraseña"
               className="input"
               autoComplete="current-password"
-              required={false}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />

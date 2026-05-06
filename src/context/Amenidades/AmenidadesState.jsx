@@ -11,6 +11,7 @@ import {
   SET_SELECTED_AMENIDAD,
   CREATE_AMENIDAD_SUCCESS,
   UPDATE_AMENIDAD_SUCCESS,
+  DELETE_AMENIDAD_SUCCESS,
 } from "./ActionsTypes";
 import { AmenidadesAPI } from "../../services/amenidades.api";
 
@@ -127,6 +128,28 @@ const AmenidadesState = ({ children }) => {
     [setLoading, setError]
   );
 
+  const eliminarAmenidad = useCallback(
+    async (id) => {
+      try {
+        setLoading();
+        await AmenidadesAPI.remove(id);
+        const fullAmenidad = await AmenidadesAPI.getById(id);
+
+        dispatch({
+          type: DELETE_AMENIDAD_SUCCESS,
+          payload: fullAmenidad,
+        });
+
+        return fullAmenidad;
+      } catch (err) {
+        console.error("Error al eliminar amenidad:", err);
+        setError(err.message || "Error al eliminar amenidad");
+        throw err;
+      }
+    },
+    [setLoading, setError]
+  );
+
   const value = useMemo(
     () => ({
       amenidades: state.amenidades,
@@ -139,6 +162,7 @@ const AmenidadesState = ({ children }) => {
       seleccionarAmenidad,
       crearAmenidad,
       actualizarAmenidad,
+      eliminarAmenidad,
       clearError,
     }),
     [
@@ -152,6 +176,7 @@ const AmenidadesState = ({ children }) => {
       seleccionarAmenidad,
       crearAmenidad,
       actualizarAmenidad,
+      eliminarAmenidad,
       clearError,
     ]
   );

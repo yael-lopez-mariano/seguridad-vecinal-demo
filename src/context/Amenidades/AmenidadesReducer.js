@@ -8,6 +8,7 @@ import {
   SET_SELECTED_AMENIDAD,
   CREATE_AMENIDAD_SUCCESS,
   UPDATE_AMENIDAD_SUCCESS,
+  DELETE_AMENIDAD_SUCCESS,
 } from "./ActionsTypes";
 
 export const AmenidadesReducer = (state, action) => {
@@ -59,6 +60,15 @@ export const AmenidadesReducer = (state, action) => {
       };
 
     case UPDATE_AMENIDAD_SUCCESS:
+      return {
+        ...state,
+        loading: false,
+        amenidades: state.amenidades.map((a) =>
+          a.amenidadID === action.payload.amenidadID ? action.payload : a
+        ),
+      };
+
+    case DELETE_AMENIDAD_SUCCESS:
       return {
         ...state,
         loading: false,

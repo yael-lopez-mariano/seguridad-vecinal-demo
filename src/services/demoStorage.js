@@ -87,6 +87,21 @@ const syncCurrentSessionUser = (updatedUser) => {
   );
 };
 
+const mergeSeedUsers = (storedUsers) => {
+  const users = (storedUsers || []).map(normalizeUser);
+  const existingIds = new Set(users.map(getUserId));
+  const existingEmails = new Set(users.map((user) => normalizeLogin(user.email)));
+  const missingSeedUsers = DEMO_DATA.usuarios
+    .map(normalizeUser)
+    .filter(
+      (user) =>
+        !existingIds.has(getUserId(user)) &&
+        !existingEmails.has(normalizeLogin(user.email))
+    );
+
+  return missingSeedUsers.length ? [...users, ...missingSeedUsers] : users;
+};
+
 export const demoStorage = {
   initializeDemoData(force = false) {
     const hasUsers = localStorage.getItem(STORAGE_KEYS.usuarios);
@@ -96,7 +111,11 @@ export const demoStorage = {
         STORAGE_KEYS.usuarios,
         JSON.stringify(clone(DEMO_DATA.usuarios))
       );
+      return;
     }
+
+    const mergedUsers = mergeSeedUsers(parseJson(hasUsers, []));
+    localStorage.setItem(STORAGE_KEYS.usuarios, JSON.stringify(mergedUsers));
   },
 
   getDemoUsers() {

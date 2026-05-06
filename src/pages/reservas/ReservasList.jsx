@@ -2,6 +2,12 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import ReservasContext from "../../context/Reservas/ReservasContext";
 import { useAmenidades } from "../../context/Amenidades/AmenidadesContext";
+import { UsuariosAPI } from "../../services/usuarios.api";
+import {
+  confirmAction,
+  showError,
+  showSuccess,
+} from "../../utils/swal";
 import ReservaForm from "./ReservaForm";
 
 export default function ReservasList() {
@@ -11,6 +17,7 @@ export default function ReservasList() {
     error,
     fetchReservas,
     crearReserva,
+    actualizarReserva,
     cancelarReserva,
     actualizarEstadoReserva,
   } = useContext(ReservasContext);
@@ -19,17 +26,25 @@ export default function ReservasList() {
 
   const [busqueda, setBusqueda] = useState("");
   const [openForm, setOpenForm] = useState(false);
+  const [reservaSeleccionada, setReservaSeleccionada] = useState(null);
+  const [formMode, setFormMode] = useState("create");
+  const [usuarios, setUsuarios] = useState([]);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
 
-  // Cargar reservas y amenidades
   useEffect(() => {
     const load = async () => {
       try {
         setLocalError("");
-        await Promise.all([fetchReservas(), cargarAmenidades()]);
+        const [, , usuariosList] = await Promise.all([
+          fetchReservas(),
+          cargarAmenidades(),
+          UsuariosAPI.list(),
+        ]);
+        setUsuarios(Array.isArray(usuariosList) ? usuariosList : []);
       } catch (err) {
         console.error("Error al cargar reservas:", err);
+        showError("Error", "Ocurrió un problema al procesar la reserva.");
       }
     };
     load();
@@ -38,19 +53,51 @@ export default function ReservasList() {
   const errorFinal = localError || error;
 
   const handleNueva = () => {
+    setReservaSeleccionada(null);
+    setFormMode("create");
+    setOpenForm(true);
+  };
+
+  const handleVer = (reserva) => {
+    setReservaSeleccionada(reserva);
+    setFormMode("view");
+    setOpenForm(true);
+  };
+
+  const handleEditar = (reserva) => {
+    setReservaSeleccionada(reserva);
+    setFormMode("edit");
     setOpenForm(true);
   };
 
   const handleCerrarForm = () => {
     setOpenForm(false);
+    setReservaSeleccionada(null);
+    setFormMode("create");
   };
 
   const handleSubmitForm = async (values) => {
+    if (formMode === "view") return;
+
     try {
       setSaving(true);
       setLocalError("");
-      await crearReserva(values);
-      setOpenForm(false);
+
+      if (formMode === "edit" && reservaSeleccionada?.reservaID) {
+        await actualizarReserva(reservaSeleccionada.reservaID, values);
+        await showSuccess(
+          "Reserva actualizada",
+          "Los cambios se guardaron correctamente."
+        );
+      } else {
+        await crearReserva(values);
+        await showSuccess(
+          "Reserva registrada",
+          "La reserva se agregó correctamente."
+        );
+      }
+
+      handleCerrarForm();
     } catch (err) {
       console.error(err);
       const msg =
@@ -58,23 +105,30 @@ export default function ReservasList() {
         err?.message ||
         "Error al guardar la reserva.";
       setLocalError(msg);
+      showError("Error", "Ocurrió un problema al procesar la reserva.");
     } finally {
       setSaving(false);
     }
   };
 
-  const confirmar = (msg) => window.confirm(msg);
-
   const handleCancelar = async (reserva) => {
-    const ok = confirmar(
-      `¿Cancelar la reserva de ${reserva.amenidadNombre} para ${reserva.nombreUsuario}?`
-    );
-    if (!ok) return;
+    const result = await confirmAction({
+      title: "¿Cancelar reserva?",
+      text: "Esta acción modificará la reserva dentro de la demo.",
+      confirmButtonText: "Sí, cancelar",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setSaving(true);
       setLocalError("");
       await cancelarReserva(reserva.reservaID);
+      await showSuccess(
+        "Reserva cancelada",
+        "La reserva se actualizó correctamente."
+      );
     } catch (err) {
       console.error(err);
       const msg =
@@ -82,21 +136,31 @@ export default function ReservasList() {
         err?.message ||
         "Error al cancelar la reserva.";
       setLocalError(msg);
+      showError("Error", "Ocurrió un problema al procesar la reserva.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleEstado = async (reserva, nuevoEstado) => {
-    const ok = confirmar(
-      `¿Cambiar el estado de la reserva a "${nuevoEstado}"?`
-    );
-    if (!ok) return;
+    const isApprove = nuevoEstado === "Aprobada";
+    const result = await confirmAction({
+      title: isApprove ? "¿Aprobar reserva?" : "¿Rechazar reserva?",
+      text: `Esta acción cambiará el estado a "${nuevoEstado}".`,
+      confirmButtonText: isApprove ? "Sí, aprobar" : "Sí, rechazar",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setSaving(true);
       setLocalError("");
       await actualizarEstadoReserva(reserva.reservaID, nuevoEstado);
+      await showSuccess(
+        isApprove ? "Reserva aprobada" : "Reserva rechazada",
+        "La reserva se actualizó correctamente."
+      );
     } catch (err) {
       console.error(err);
       const msg =
@@ -104,12 +168,12 @@ export default function ReservasList() {
         err?.message ||
         "Error al actualizar el estado de la reserva.";
       setLocalError(msg);
+      showError("Error", "Ocurrió un problema al procesar la reserva.");
     } finally {
       setSaving(false);
     }
   };
 
-  // Filtro de búsqueda
   const reservasFiltradas = useMemo(() => {
     const term = busqueda.trim().toLowerCase();
     if (!term) return reservas || [];
@@ -129,37 +193,39 @@ export default function ReservasList() {
 
     if (value === "aprobada") {
       return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
           Aprobada
         </span>
       );
     }
     if (value === "rechazada") {
       return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 border border-rose-200">
+        <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">
           Rechazada
         </span>
       );
     }
     if (value === "cancelada") {
       return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
           Cancelada
         </span>
       );
     }
 
     return (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
         Pendiente
       </span>
     );
   };
 
+  const isClosed = (estado) =>
+    ["Cancelada", "Rechazada"].includes(estado || "Pendiente");
+
   return (
     <div className="p-4 md:p-6">
-      {/* Encabezado */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-800">Reservas</h1>
           <p className="text-sm text-slate-500">
@@ -167,24 +233,19 @@ export default function ReservasList() {
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative">
-            <input
-              type="text"
-              className="w-full sm:w-72 border border-slate-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              placeholder="Buscar por amenidad, usuario, casa o motivo..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-            <span className="absolute right-3 top-2.5 text-slate-400 text-sm">
-              🔍
-            </span>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            type="text"
+            className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-80"
+            placeholder="Buscar por amenidad, usuario, casa o motivo..."
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+          />
 
           <button
             type="button"
             onClick={handleNueva}
-            className="inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
+            className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
             disabled={loading}
           >
             + Nueva reserva
@@ -192,40 +253,52 @@ export default function ReservasList() {
         </div>
       </div>
 
-      {/* Errores */}
       {errorFinal && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {errorFinal}
         </div>
       )}
 
-      {/* Loading */}
       {loading && (
         <div className="mb-4 text-sm text-slate-500">Cargando reservas...</div>
       )}
 
-      {/* Tabla */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            {/* Encabezado verde */}
-            <thead className="bg-emerald-700 text-white text-xs md:text-sm">
+          <table className="min-w-[1180px] w-full table-auto text-sm text-slate-700">
+            <thead className="bg-emerald-700 text-white">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold">Amenidad</th>
-                <th className="px-4 py-3 text-left font-semibold">Tipo</th>
-                <th className="px-4 py-3 text-left font-semibold">Usuario</th>
-                <th className="px-4 py-3 text-center font-semibold">Casa</th>
-                <th className="px-4 py-3 text-center font-semibold">Fecha</th>
-                <th className="px-4 py-3 text-center font-semibold">Horario</th>
-                <th className="px-4 py-3 text-left font-semibold">Motivo</th>
-                <th className="px-4 py-3 text-center font-semibold">Estado</th>
-                <th className="px-4 py-3 text-center font-semibold">
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Amenidad
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Tipo
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Usuario
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Casa
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Fecha
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Horario
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Motivo
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Estado
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold md:text-sm">
                   Acciones
                 </th>
               </tr>
             </thead>
 
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {reservasFiltradas.length === 0 ? (
                 <tr>
                   <td
@@ -239,55 +312,63 @@ export default function ReservasList() {
                 reservasFiltradas.map((r) => (
                   <tr
                     key={r.reservaID}
-                    className="border-t border-slate-100 hover:bg-emerald-50/70 transition-colors"
+                    className="transition-colors hover:bg-emerald-50/70"
                   >
-                    <td className="px-4 py-3 text-slate-800 font-medium">
+                    <td className="px-4 py-3 font-medium text-slate-800">
                       {r.amenidadNombre}
                     </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {r.tipoAmenidad}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {r.nombreUsuario}
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-700">
-                      {r.numeroCasa}
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-700">
+                    <td className="px-4 py-3">{r.tipoAmenidad}</td>
+                    <td className="px-4 py-3">{r.nombreUsuario}</td>
+                    <td className="px-4 py-3 text-center">{r.numeroCasa || "-"}</td>
+                    <td className="px-4 py-3 text-center">
                       {String(r.fechaReserva).slice(0, 10)}
                     </td>
-                    <td className="px-4 py-3 text-center text-slate-700">
+                    <td className="px-4 py-3 text-center">
                       {r.horaInicio?.slice(0, 5)} - {r.horaFin?.slice(0, 5)}
                     </td>
-                    <td className="px-4 py-3 text-slate-700 max-w-xs truncate">
-                      {r.motivo}
-                    </td>
+                    <td className="max-w-xs truncate px-4 py-3">{r.motivo}</td>
                     <td className="px-4 py-3 text-center">
                       {badgeEstado(r.estado)}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex flex-col sm:flex-row gap-1 justify-center">
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleVer(r)}
+                          className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                          disabled={saving}
+                        >
+                          Ver
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditar(r)}
+                          className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-orange-600"
+                          disabled={saving || isClosed(r.estado)}
+                        >
+                          Editar
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleEstado(r, "Aprobada")}
-                          className="px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
-                          disabled={saving}
+                          className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                          disabled={saving || r.estado === "Aprobada" || isClosed(r.estado)}
                         >
                           Aprobar
                         </button>
                         <button
                           type="button"
                           onClick={() => handleEstado(r, "Rechazada")}
-                          className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-60"
-                          disabled={saving}
+                          className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700"
+                          disabled={saving || isClosed(r.estado)}
                         >
                           Rechazar
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCancelar(r)}
-                          className="px-3 py-1.5 rounded-full text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-60"
-                          disabled={saving}
+                          className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700"
+                          disabled={saving || r.estado === "Cancelada"}
                         >
                           Cancelar
                         </button>
@@ -301,14 +382,16 @@ export default function ReservasList() {
         </div>
       </div>
 
-      {/* Modal formulario */}
       {openForm && (
         <ReservaForm
           open={openForm}
           onClose={handleCerrarForm}
           onSubmit={handleSubmitForm}
           amenidades={amenidades}
+          usuarios={usuarios}
+          initial={reservaSeleccionada}
           saving={saving}
+          mode={formMode}
         />
       )}
     </div>

@@ -2,11 +2,17 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { UsuariosAPI } from "../../services/usuarios.api";
-import UsuarioForm from "./UsuarioForm";
+import {
+  confirmAction,
+  showError,
+  showSuccess,
+  showWarning,
+} from "../../utils/swal";
 import {
   parseTipoUsuarioID,
   TIPO_USUARIO_LABEL,
 } from "../../types/tiposUsuario";
+import UsuarioForm from "./UsuarioForm";
 
 export default function UsuariosList() {
   const { user } = useAuth();
@@ -16,10 +22,9 @@ export default function UsuariosList() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(null);
-
-  const [search, setSearch] = useState(""); // 🔍 texto de búsqueda
-  const [filtroTipo, setFiltroTipo] = useState(""); // tipo usuario
-  const [filtroEstado, setFiltroEstado] = useState(""); // activo / inactivo
+  const [search, setSearch] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
 
   const loadData = async () => {
     setLoading(true);
@@ -34,6 +39,7 @@ export default function UsuariosList() {
     } catch (err) {
       console.error("Error cargando usuarios:", err);
       setError("No se pudieron cargar los usuarios.");
+      showError("Error", "Ocurrio un problema al cargar los usuarios.");
     } finally {
       setLoading(false);
     }
@@ -44,7 +50,6 @@ export default function UsuariosList() {
   }, []);
 
   const handleNew = () => {
-    // form nuevo
     setEditing({});
   };
 
@@ -55,7 +60,8 @@ export default function UsuariosList() {
       setEditing(detail);
     } catch (err) {
       console.error("Error obteniendo detalle de usuario:", err);
-      setError("No se pudo cargar el usuario para edición.");
+      setError("No se pudo cargar el usuario para edicion.");
+      showError("Error", "Ocurrio un problema al cargar el usuario.");
     } finally {
       setSaving(false);
     }
@@ -67,28 +73,40 @@ export default function UsuariosList() {
 
     if (targetId === 1 || u.usuario === "Administrador") {
       setError("El usuario Administrador demo no se puede eliminar.");
+      await showWarning(
+        "Accion no permitida",
+        "No puedes desactivar este usuario."
+      );
       return;
     }
 
     if (currentUserId && targetId === currentUserId) {
-      setError("No puedes eliminar el usuario con sesión activa.");
+      setError("No puedes eliminar el usuario con sesion activa.");
+      await showWarning(
+        "Accion no permitida",
+        "No puedes desactivar este usuario."
+      );
       return;
     }
 
-    if (
-      !window.confirm(
-        `¿Desactivar al usuario "${u.nombre} ${u.apellidoPaterno}"?`
-      )
-    ) {
-      return;
-    }
+    const result = await confirmAction({
+      title: "¿Desactivar usuario?",
+      text: "El usuario quedara inactivo dentro de la demo.",
+      confirmButtonText: "Si, desactivar",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
       setSaving(true);
       await UsuariosAPI.delete(u.usuarioID);
       await loadData();
+      await showSuccess("Usuario desactivado", "El usuario quedo inactivo.");
     } catch (err) {
       console.error("Error eliminando usuario:", err);
       setError(err.message || "No se pudo eliminar el usuario.");
+      showError("Error", "Ocurrio un problema al procesar la accion.");
     } finally {
       setSaving(false);
     }
@@ -103,7 +121,6 @@ export default function UsuariosList() {
     setError("");
     try {
       if (formData.usuarioID) {
-        // UPDATE
         await UsuariosAPI.update({
           usuarioID: formData.usuarioID,
           numeroCasa: formData.numeroCasa ?? "",
@@ -114,14 +131,17 @@ export default function UsuariosList() {
           telefono: formData.telefono ?? "",
           fechaNacimiento: formData.fechaNacimiento || null,
           email: formData.email ?? "",
-          password: formData.password || "", // si viene vacío, backend decide
+          password: formData.password || "",
           numeroTarjeta: formData.numeroTarjeta ?? "",
           ultimosDigitos:
             formData.numeroTarjeta?.slice(-4) ?? formData.ultimosDigitos ?? "",
           fechaVencimiento: formData.fechaVencimiento || null,
         });
+        await showSuccess(
+          "Usuario actualizado",
+          "Los cambios se guardaron correctamente."
+        );
       } else {
-        // CREATE
         await UsuariosAPI.register({
           tipoUsuarioID: formData.tipoUsuarioID,
           numeroCasa: formData.numeroCasa ?? "",
@@ -136,21 +156,29 @@ export default function UsuariosList() {
           numeroTarjeta: formData.numeroTarjeta ?? "",
           fechaVencimiento: formData.fechaVencimiento || null,
         });
+        await showSuccess(
+          "Usuario registrado",
+          "El usuario se agrego correctamente."
+        );
       }
 
       setEditing(null);
       await loadData();
     } catch (err) {
       console.error("Error guardando usuario:", err);
-      setError("No se pudo guardar el usuario.");
+      const message = err?.message || "No se pudo guardar el usuario.";
+      setError(message);
+      if (message.toLowerCase().includes("existe")) {
+        showWarning("Datos incompletos", message);
+      } else {
+        showError("Error", "Ocurrio un problema al procesar la accion.");
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  // 🔍 Filtro combinado: texto + tipo + estado
   const usuariosFiltrados = usuarios.filter((u) => {
-    // texto
     const term = search.trim().toLowerCase();
     if (term) {
       const fullText = (
@@ -168,23 +196,20 @@ export default function UsuariosList() {
       )
         .toLowerCase()
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, ""); // quitar acentos
+        .replace(/[\u0300-\u036f]/g, "");
 
       const normalizedTerm = term
-        .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
 
       if (!fullText.includes(normalizedTerm)) return false;
     }
 
-    // tipo
     if (filtroTipo) {
       const tipoId = parseTipoUsuarioID(u.tipoUsuarioID ?? u.tipoUsuario);
       if (String(tipoId) !== String(filtroTipo)) return false;
     }
 
-    // estado
     if (filtroEstado === "activos" && !u.activo) return false;
     if (filtroEstado === "inactivos" && u.activo) return false;
 
@@ -193,7 +218,6 @@ export default function UsuariosList() {
 
   return (
     <div className="p-4">
-      {/* Título */}
       <div className="mb-4">
         <h1 className="text-2xl font-bold">Usuarios</h1>
         <p className="text-sm text-slate-500">
@@ -201,23 +225,20 @@ export default function UsuariosList() {
         </p>
       </div>
 
-      {/* 🔍 Buscador + filtros + botón nuevo en la MISMA línea */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex flex-1 flex-wrap gap-2 min-w-[260px]">
-          {/* Buscador */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex min-w-[260px] flex-1 flex-wrap gap-2">
           <input
             type="text"
             placeholder="Buscar por nombre, apellido o correo..."
-            className="flex-1 min-w-[180px] border rounded-full px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="min-w-[180px] flex-1 rounded-full border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
 
-          {/* Filtro tipo */}
           <select
             value={filtroTipo}
             onChange={(e) => setFiltroTipo(e.target.value)}
-            className="border rounded-full px-3 py-2 text-sm min-w-[140px]"
+            className="min-w-[140px] rounded-full border px-3 py-2 text-sm"
           >
             <option value="">Todos los tipos</option>
             {tipos.map((t) => (
@@ -227,11 +248,10 @@ export default function UsuariosList() {
             ))}
           </select>
 
-          {/* Filtro estado */}
           <select
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value)}
-            className="border rounded-full px-3 py-2 text-sm min-w-[140px]"
+            className="min-w-[140px] rounded-full border px-3 py-2 text-sm"
           >
             <option value="">Todos los estados</option>
             <option value="activos">Activos</option>
@@ -239,11 +259,10 @@ export default function UsuariosList() {
           </select>
         </div>
 
-        {/* Botón nuevo usuario */}
         <button
           type="button"
           onClick={handleNew}
-          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 whitespace-nowrap"
+          className="whitespace-nowrap rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
         >
           + Nuevo usuario
         </button>
@@ -259,10 +278,9 @@ export default function UsuariosList() {
         <div className="py-10 text-center text-slate-500">Cargando...</div>
       ) : (
         <>
-          {/* Formulario de creación / edición */}
           {editing && (
             <div className="mb-6">
-              <h2 className="text-lg font-semibold mb-2">
+              <h2 className="mb-2 text-lg font-semibold">
                 {editing.usuarioID ? "Editar usuario" : "Nuevo usuario"}
               </h2>
               <UsuarioForm
@@ -275,29 +293,29 @@ export default function UsuariosList() {
             </div>
           )}
 
-          {/* Tabla de usuarios */}
-          <div className="overflow-x-auto bg-white rounded-xl shadow">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-[780px] w-full table-auto text-sm text-slate-700">
+              <thead className="bg-emerald-700 text-white">
                 <tr>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
                     Nombre
                   </th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
                     Correo
                   </th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
                     Tipo
                   </th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
                     Estado
                   </th>
-                  <th className="px-4 py-2 text-right font-semibold text-slate-700">
+                  <th className="px-4 py-3 text-right text-xs font-semibold md:text-sm">
                     Acciones
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {usuariosFiltrados.length === 0 ? (
                   <tr>
                     <td
@@ -318,14 +336,16 @@ export default function UsuariosList() {
                     return (
                       <tr
                         key={u.usuarioID}
-                        className="border-t border-slate-100 hover:bg-slate-50"
+                        className="transition-colors hover:bg-emerald-50/70"
                       >
-                        <td className="px-4 py-2">
-                          {u.nombre} {u.apellidoPaterno}
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-slate-800">
+                            {u.nombre} {u.apellidoPaterno}
+                          </span>
                         </td>
-                        <td className="px-4 py-2">{u.email}</td>
-                        <td className="px-4 py-2">{tipoLabel}</td>
-                        <td className="px-4 py-2">
+                        <td className="px-4 py-3">{u.email}</td>
+                        <td className="px-4 py-3">{tipoLabel}</td>
+                        <td className="px-4 py-3">
                           {u.activo ? (
                             <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                               Activo
@@ -336,18 +356,18 @@ export default function UsuariosList() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-2 text-right space-x-2">
+                        <td className="space-x-2 px-4 py-3 text-right">
                           <button
                             type="button"
                             onClick={() => handleEdit(u)}
-                            className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-semibold border border-sky-300 text-sky-700 hover:bg-sky-50"
+                            className="inline-flex items-center rounded-full bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-orange-600"
                           >
                             Editar
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(u)}
-                            className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50"
+                            className="inline-flex items-center rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700"
                           >
                             Eliminar
                           </button>
@@ -357,7 +377,8 @@ export default function UsuariosList() {
                   })
                 )}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </>
       )}

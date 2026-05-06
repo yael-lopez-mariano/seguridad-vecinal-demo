@@ -68,6 +68,20 @@ export default function ReservasState({ children }) {
     }
   };
 
+  const actualizarReserva = async (id, payload) => {
+    try {
+      setLoading(true);
+      await ReservasAPI.update(id, payload);
+      await fetchReservas();
+    } catch (err) {
+      console.error(err);
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const cancelarReserva = async (id) => {
     try {
       setLoading(true);
@@ -104,6 +118,7 @@ export default function ReservasState({ children }) {
         fetchReservas,
         fetchReservasByUsuario,
         crearReserva,
+        actualizarReserva,
         cancelarReserva,
         actualizarEstadoReserva,
       }}

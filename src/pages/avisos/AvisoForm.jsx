@@ -1,6 +1,7 @@
 // src/pages/avisos/AvisoForm.jsx
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DateTimePickerES from "../../components/time/DateTimePickerES";
+import { showWarning } from "../../utils/swal";
 
 export default function AvisoForm({
   open,
@@ -8,17 +9,21 @@ export default function AvisoForm({
   onSubmit,
   categorias = [],
   initial,
+  mode = initial ? "edit" : "create",
 }) {
   const [form, setForm] = useState({
     usuarioID: 0,
-    categoriaID: "", // string en el input
+    categoriaID: "",
     titulo: "",
     descripcion: "",
-    fechaEvento: "", // ISO (string) o "" vacío
+    fechaEvento: "",
   });
   const [errors, setErrors] = useState({});
 
-  // ------ efectos de montaje / edición ------
+  const isView = mode === "view";
+  const isEdit = mode === "edit" || (!!initial && !isView);
+  const title = isView ? "Ver aviso" : isEdit ? "Editar aviso" : "Nuevo aviso";
+
   useEffect(() => {
     if (initial) {
       const catIdFromInitial =
@@ -32,18 +37,18 @@ export default function AvisoForm({
         fechaEvento: initial.fechaEvento || "",
       });
     } else {
-      setForm((f) => ({
-        ...f,
-        categoriaID:
-          f.categoriaID ||
-          (categorias?.[0]?.categoriaID
-            ? String(categorias[0].categoriaID)
-            : ""),
-      }));
+      setForm({
+        usuarioID: 0,
+        categoriaID: categorias?.[0]?.categoriaID
+          ? String(categorias[0].categoriaID)
+          : "",
+        titulo: "",
+        descripcion: "",
+        fechaEvento: "",
+      });
     }
   }, [initial, categorias]);
 
-  // si llegan categorías async y aún no hay selección, tomar la primera
   useEffect(() => {
     if (!initial && !form.categoriaID && categorias?.length) {
       setForm((f) => ({
@@ -51,18 +56,14 @@ export default function AvisoForm({
         categoriaID: String(categorias[0].categoriaID),
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categorias, initial]);
-
-  const isEdit = !!initial;
-  const title = isEdit ? "Editar aviso" : "Nuevo aviso";
+  }, [categorias, initial, form.categoriaID]);
 
   const validate = useMemo(
     () => (f) => {
       const e = {};
-      if (!f.titulo?.trim()) e.titulo = "Título requerido";
-      if (!f.descripcion?.trim()) e.descripcion = "Descripción requerida";
-      if (!f.categoriaID) e.categoriaID = "Selecciona categoría";
+      if (!f.titulo?.trim()) e.titulo = "Titulo requerido";
+      if (!f.descripcion?.trim()) e.descripcion = "Descripcion requerida";
+      if (!f.categoriaID) e.categoriaID = "Selecciona categoria";
       return e;
     },
     []
@@ -70,22 +71,31 @@ export default function AvisoForm({
 
   const submit = async (e) => {
     e.preventDefault();
+    if (isView) return;
+
     const payload = {
       usuarioID: Number(form.usuarioID) || 0,
       categoriaID: form.categoriaID ? Number(form.categoriaID) : undefined,
       titulo: form.titulo.trim(),
       descripcion: form.descripcion.trim(),
-      fechaEvento: form.fechaEvento || null, // null si no seleccionó
+      fechaEvento: form.fechaEvento || null,
     };
 
     const eVal = validate(payload);
     setErrors(eVal);
-    if (Object.keys(eVal).length) return;
+    if (Object.keys(eVal).length) {
+      await showWarning("Datos incompletos", Object.values(eVal)[0]);
+      return;
+    }
+
+    if (payload.fechaEvento && Number.isNaN(new Date(payload.fechaEvento).getTime())) {
+      await showWarning("Datos incompletos", "La fecha del aviso no es valida.");
+      return;
+    }
 
     await onSubmit(payload);
   };
 
-  // -------- manejo de cierre con ESC y por fondo ----------
   const handleKeyDown = useCallback(
     (e) => {
       if (e.key === "Escape") onClose?.();
@@ -96,7 +106,6 @@ export default function AvisoForm({
   useEffect(() => {
     if (!open) return;
     window.addEventListener("keydown", handleKeyDown);
-    // bloquear scroll del body cuando está abierto
     const { overflow } = document.body.style;
     document.body.style.overflow = "hidden";
     return () => {
@@ -107,6 +116,9 @@ export default function AvisoForm({
 
   if (!open) return null;
 
+  const fieldCls =
+    "w-full rounded-xl border border-slate-300 p-2 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300 disabled:bg-slate-100 disabled:text-slate-600";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
@@ -115,66 +127,55 @@ export default function AvisoForm({
       aria-labelledby="aviso-form-title"
       onClick={onClose}
     >
-      {/* Caja del modal: pointer-events para que el click dentro NO cierre */}
       <div
-        className="
-          pointer-events-auto
-          w-full 
-          max-w-md sm:max-w-lg
-          rounded-2xl bg-white shadow-2xl
-          outline-none
-          overflow-hidden
-        "
+        className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl outline-none sm:max-w-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header fijo (compacto) */}
-        <div className="px-4 py-2 bg-emerald-600 text-white flex items-center justify-between">
+        <div className="flex items-center justify-between bg-emerald-600 px-4 py-2 text-white">
           <h2 id="aviso-form-title" className="text-base font-semibold">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-white/60"
+            className="rounded-lg px-2 py-1 text-xl leading-none hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-white/60"
             aria-label="Cerrar"
             type="button"
           >
-            ✕
+            x
           </button>
         </div>
 
-        {/* Contenido con scroll interno para pantallas pequeñas */}
         <form
           onSubmit={submit}
-          className="
-            p-4 grid gap-4 text-sm
-            max-h-[85vh] overflow-y-auto
-          "
+          className="grid max-h-[85vh] gap-4 overflow-y-auto p-4 text-sm"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Título
+              <label className="mb-1 block text-xs font-medium text-slate-700">
+                Titulo
               </label>
               <input
-                className="w-full border border-slate-300 rounded-xl p-2 outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400"
+                className={fieldCls}
                 value={form.titulo}
+                disabled={isView}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, titulo: e.target.value }))
                 }
-                placeholder="Ej. Reunión general"
+                placeholder="Ej. Reunion general"
               />
               {errors.titulo && (
-                <p className="text-xs text-rose-600 mt-1">{errors.titulo}</p>
+                <p className="mt-1 text-xs text-rose-600">{errors.titulo}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Categoría
+              <label className="mb-1 block text-xs font-medium text-slate-700">
+                Categoria
               </label>
               <select
-                className="w-full border border-slate-300 rounded-xl p-2 outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400"
+                className={fieldCls}
                 value={form.categoriaID}
+                disabled={isView}
                 onChange={(e) =>
                   setForm((f) => ({
                     ...f,
@@ -182,7 +183,7 @@ export default function AvisoForm({
                   }))
                 }
               >
-                <option value="">Selecciona…</option>
+                <option value="">Selecciona...</option>
                 {categorias.map((c) => (
                   <option key={c.categoriaID} value={String(c.categoriaID)}>
                     {c.nombre}
@@ -190,7 +191,7 @@ export default function AvisoForm({
                 ))}
               </select>
               {errors.categoriaID && (
-                <p className="text-xs text-rose-600 mt-1">
+                <p className="mt-1 text-xs text-rose-600">
                   {errors.categoriaID}
                 </p>
               )}
@@ -198,47 +199,56 @@ export default function AvisoForm({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Descripción
+            <label className="mb-1 block text-xs font-medium text-slate-700">
+              Descripcion
             </label>
             <textarea
-              className="w-full border border-slate-300 rounded-xl p-2 min-h-24 outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400"
+              className={`${fieldCls} min-h-24 resize-y`}
               value={form.descripcion}
+              disabled={isView}
               onChange={(e) =>
                 setForm((f) => ({ ...f, descripcion: e.target.value }))
               }
-              placeholder="Detalle del aviso…"
+              placeholder="Detalle del aviso..."
             />
             {errors.descripcion && (
-              <p className="text-xs text-rose-600 mt-1">{errors.descripcion}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.descripcion}
+              </p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
+            <label className="mb-1 block text-xs font-medium text-slate-700">
               Fecha y hora del evento (opcional)
             </label>
-            <DateTimePickerES
-              compact
-              value={form.fechaEvento || null}
-              onChange={(iso) => setForm((f) => ({ ...f, fechaEvento: iso }))}
-            />
+            <div className={isView ? "pointer-events-none opacity-75" : ""}>
+              <DateTimePickerES
+                compact
+                value={form.fechaEvento || null}
+                onChange={(iso) => {
+                  if (!isView) setForm((f) => ({ ...f, fechaEvento: iso }));
+                }}
+              />
+            </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-1 sticky bottom-0 bg-white">
+          <div className="sticky bottom-0 flex justify-end gap-2 bg-white pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50"
+              className="rounded-full bg-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-300"
             >
-              Cancelar
+              {isView ? "Cerrar" : "Cancelar"}
             </button>
-            <button
-              type="submit"
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              {isEdit ? "Guardar cambios" : "Crear aviso"}
-            </button>
+            {!isView && (
+              <button
+                type="submit"
+                className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+              >
+                {isEdit ? "Guardar cambios" : "Crear aviso"}
+              </button>
+            )}
           </div>
         </form>
       </div>

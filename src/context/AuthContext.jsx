@@ -1,5 +1,6 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import demoStorage from "../services/demoStorage";
+import { showError } from "../utils/swal";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 export const DEMO_MODE = true;
@@ -28,7 +29,8 @@ export const AuthProvider = ({ children }) => {
       try {
         setUser(JSON.parse(storedUser));
       } catch (error) {
-        alert("Error", error);
+        console.error("Error al restaurar la sesión:", error);
+        showError("Error de sesión", "No se pudo restaurar la sesión guardada.");
         localStorage.removeItem("user");
       }
     }
@@ -58,7 +60,7 @@ export const AuthProvider = ({ children }) => {
 
     localStorage.setItem("user", JSON.stringify(userData));
 
-    // Compatibilidad con utilidades existentes que leen otras llaves de sesiÃ³n.
+    // Compatibilidad con utilidades existentes que leen otras llaves de sesión.
     localStorage.setItem("rsv_user", JSON.stringify(userData));
     localStorage.setItem(
       "session",
@@ -79,7 +81,9 @@ export const AuthProvider = ({ children }) => {
         const data = demoStorage.validateCredentials(email, password);
 
         if (!data) {
-          throw new Error("Credenciales demo incorrectas");
+          const authError = new Error("Credenciales incorrectas");
+          authError.code = "INVALID_CREDENTIALS";
+          throw authError;
         }
 
         const userData = buildUserData(data, email);
@@ -97,7 +101,9 @@ export const AuthProvider = ({ children }) => {
 
       if (!response.ok) {
         const errorData = await response.text();
-        throw new Error(errorData || "Credenciales incorrectas");
+        const authError = new Error(errorData || "Credenciales incorrectas");
+        authError.code = "INVALID_CREDENTIALS";
+        throw authError;
       }
 
       const data = await response.json();
@@ -108,8 +114,7 @@ export const AuthProvider = ({ children }) => {
       return true;
     } catch (error) {
       console.error("Error en login:", error);
-      alert(error.message || "Error de conexión con el servidor");
-      return false;
+      throw error;
     } finally {
       setLoading(false);
     }

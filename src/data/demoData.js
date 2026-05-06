@@ -1,5 +1,7 @@
 import { DEMO_TIPOS_USUARIO, DEMO_USERS } from "./modules/usuarios.data";
 import { createDemoAvisos } from "./modules/avisos.data";
+import { createDemoAmenidades } from "./modules/amenidades.data";
+import { createDemoReservas } from "./modules/reservas.data";
 import {
   DEMO_CATALOGOS,
   DEMO_CATEGORIAS_AVISO,
@@ -27,10 +29,14 @@ import {
 } from "./modules/estados.data";
 
 const DEMO_AVISOS = createDemoAvisos(DEMO_CATEGORIAS_AVISO);
+const DEMO_AMENIDADES = createDemoAmenidades(DEMO_TIPOS_AMENIDAD);
+const DEMO_RESERVAS = createDemoReservas();
 
 export {
+  DEMO_AMENIDADES,
   DEMO_CATALOGOS,
   DEMO_AVISOS,
+  DEMO_RESERVAS,
   DEMO_CATEGORIAS_AVISO,
   DEMO_ESTADOS,
   DEMO_ESTADOS_ALERTA,
@@ -59,6 +65,8 @@ export const DEMO_DATA = {
   usuarios: DEMO_USERS,
   tiposUsuario: DEMO_TIPOS_USUARIO,
   avisos: DEMO_AVISOS,
+  amenidades: DEMO_AMENIDADES,
+  reservas: DEMO_RESERVAS,
   catalogos: DEMO_CATALOGOS,
   estados: DEMO_ESTADOS,
 };

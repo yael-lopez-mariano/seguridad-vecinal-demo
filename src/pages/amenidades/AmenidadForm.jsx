@@ -1,5 +1,6 @@
 // src/pages/amenidades/AmenidadForm.jsx
 import { useEffect, useMemo, useState } from "react";
+import { showWarning } from "../../utils/swal";
 
 export default function AmenidadForm({
   open,
@@ -8,7 +9,11 @@ export default function AmenidadForm({
   tiposAmenidad = [],
   initial,
   saving = false,
+  mode = "create",
 }) {
+  const isView = mode === "view";
+  const isEdit = mode === "edit";
+
   const [form, setForm] = useState({
     tipoAmenidadID: "",
     nombre: "",
@@ -18,7 +23,6 @@ export default function AmenidadForm({
 
   const [errors, setErrors] = useState({});
 
-  // Carga inicial / edición
   useEffect(() => {
     if (initial) {
       setForm({
@@ -38,16 +42,25 @@ export default function AmenidadForm({
     setErrors({});
   }, [initial, open]);
 
-  // Tipo seleccionado para mostrar horario sugerido
   const tipoSeleccionado = useMemo(
     () =>
       tiposAmenidad.find(
-        (t) => t.tipoAmenidadID === Number(form.tipoAmenidadID)
+        (t) => Number(t.tipoAmenidadID) === Number(form.tipoAmenidadID)
       ),
     [tiposAmenidad, form.tipoAmenidadID]
   );
 
+  const title = isView
+    ? "Ver amenidad"
+    : isEdit
+    ? "Editar amenidad"
+    : "Nueva amenidad";
+
+  const fieldCls =
+    "w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:text-slate-600";
+
   const handleChange = (e) => {
+    if (isView) return;
     const { name, value } = e.target;
     setForm((prev) => ({
       ...prev,
@@ -55,7 +68,7 @@ export default function AmenidadForm({
     }));
   };
 
-  const validar = () => {
+  const validar = async () => {
     const errs = {};
 
     if (!form.tipoAmenidadID) errs.tipoAmenidadID = "Selecciona un tipo.";
@@ -68,12 +81,20 @@ export default function AmenidadForm({
     }
 
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+
+    const firstMessage = Object.values(errs)[0];
+    if (firstMessage) {
+      await showWarning("Datos incompletos", firstMessage);
+      return false;
+    }
+
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validar()) return;
+    if (isView) return;
+    if (!(await validar())) return;
 
     const payload = {
       tipoAmenidadID: Number(form.tipoAmenidadID),
@@ -88,36 +109,31 @@ export default function AmenidadForm({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-3">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-semibold text-slate-800">
-            {initial ? "Editar amenidad" : "Nueva amenidad"}
-          </h2>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-3 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between bg-emerald-600 px-5 py-3 text-white">
+          <h2 className="text-lg font-semibold">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+            className="rounded-lg px-2 py-1 text-xl leading-none hover:bg-emerald-700"
             disabled={saving}
           >
             ×
           </button>
         </div>
 
-        {/* Body */}
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          {/* Tipo de amenidad */}
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto px-5 py-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
               Tipo de amenidad
             </label>
             <select
               name="tipoAmenidadID"
               value={form.tipoAmenidadID}
               onChange={handleChange}
-              disabled={saving}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              disabled={saving || isView}
+              className={fieldCls}
             >
               <option value="">Selecciona un tipo...</option>
               {tiposAmenidad.map((t) => (
@@ -133,9 +149,8 @@ export default function AmenidadForm({
             )}
           </div>
 
-          {/* Nombre */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
               Nombre
             </label>
             <input
@@ -143,8 +158,8 @@ export default function AmenidadForm({
               name="nombre"
               value={form.nombre}
               onChange={handleChange}
-              disabled={saving}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              disabled={saving || isView}
+              className={fieldCls}
               placeholder="Ej. Gimnasio Central"
             />
             {errors.nombre && (
@@ -152,9 +167,8 @@ export default function AmenidadForm({
             )}
           </div>
 
-          {/* Ubicación */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
               Ubicación
             </label>
             <input
@@ -162,8 +176,8 @@ export default function AmenidadForm({
               name="ubicacion"
               value={form.ubicacion}
               onChange={handleChange}
-              disabled={saving}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              disabled={saving || isView}
+              className={fieldCls}
               placeholder="Ej. Planta baja, exterior, etc."
             />
             {errors.ubicacion && (
@@ -171,9 +185,8 @@ export default function AmenidadForm({
             )}
           </div>
 
-          {/* Capacidad */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
               Capacidad (personas)
             </label>
             <input
@@ -181,8 +194,8 @@ export default function AmenidadForm({
               name="capacidad"
               value={form.capacidad}
               onChange={handleChange}
-              disabled={saving}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              disabled={saving || isView}
+              className={fieldCls}
               placeholder="Ej. 20"
             />
             {errors.capacidad && (
@@ -190,42 +203,42 @@ export default function AmenidadForm({
             )}
           </div>
 
-          {/* Horario (solo lectura desde el tipo) */}
           {tipoSeleccionado && (
-            <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-600">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               <p>
                 <span className="font-semibold">Horario sugerido: </span>
                 {tipoSeleccionado.horarioInicio?.slice(0, 5)} -{" "}
                 {tipoSeleccionado.horarioFin?.slice(0, 5)}
               </p>
               <p className="mt-1">
-                (El horario se toma del tipo de amenidad configurado en el
-                sistema.)
+                El horario se toma del tipo de amenidad configurado en el
+                sistema.
               </p>
             </div>
           )}
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 pt-2 pb-1">
+          <div className="sticky bottom-0 flex items-center justify-end gap-3 bg-white pt-2 pb-1">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-300"
               disabled={saving}
             >
-              Cancelar
+              {isView ? "Cerrar" : "Cancelar"}
             </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
-              disabled={saving}
-            >
-              {saving
-                ? "Guardando..."
-                : initial
-                ? "Guardar cambios"
-                : "Registrar amenidad"}
-            </button>
+            {!isView && (
+              <button
+                type="submit"
+                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                disabled={saving}
+              >
+                {saving
+                  ? "Guardando..."
+                  : isEdit
+                  ? "Guardar cambios"
+                  : "Registrar amenidad"}
+              </button>
+            )}
           </div>
         </form>
       </div>
