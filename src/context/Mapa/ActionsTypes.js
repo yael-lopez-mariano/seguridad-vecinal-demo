@@ -1,0 +1,8 @@
+export const GET_MARCADORES = "GET_MARCADORES";
+export const GET_MARCADOR = "GET_MARCADOR";
+export const ADD_MARCADOR = "ADD_MARCADOR";
+export const UPDATE_MARCADOR = "UPDATE_MARCADOR";
+export const DELETE_MARCADOR = "DELETE_MARCADOR";
+export const SET_LOADING = "SET_LOADING";
+export const SET_ERROR = "SET_ERROR";
+export const CLEAR_ERROR = "CLEAR_ERROR";

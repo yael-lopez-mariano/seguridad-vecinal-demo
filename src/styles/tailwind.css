@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .card { @apply bg-white shadow-card rounded-xl2 p-6 sm:p-8; }
+
+  .input {
+    @apply w-full h-[60px] rounded-[10px] bg-inputGray/70 px-4 text-[15px]
+           placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-brand-500;
+  }
+
+  /* Usa utilidades Tailwind para el gradiente */
+  .btn-primary {
+    @apply w-[300px] h-[75px] rounded-[10px] text-white font-semibold text-[18px]
+           shadow-md transition-transform active:scale-[0.98]
+           bg-gradient-to-r from-brand-600 to-brand-500;
+  }
+
+  .help-link { @apply text-brand-600 hover:underline; }
+
+
+}
+
+
+@layer components {
+  .card { @apply bg-white rounded-2xl shadow-md border border-slate-200; }
+  .input { @apply rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-300; }
+  .btn-primary { @apply rounded-xl px-4 py-2 text-white font-medium; background: linear-gradient(90deg,#047857,#10B981); }
+  .btn-outline { @apply rounded-xl px-3 py-2 border border-emerald-300 text-emerald-700 bg-white hover:bg-emerald-50; }
+  .rounded-xl2 { border-radius: 14px; }
+}
