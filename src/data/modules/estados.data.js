@@ -48,6 +48,10 @@ export const DEMO_ESTADOS_ALERTA = [
 
 export const DEMO_ESTADOS_INVITADO = [
   { value: "Pendiente", label: "Pendiente" },
+  { value: "Autorizado", label: "Autorizado" },
+  { value: "Rechazado", label: "Rechazado" },
+  { value: "Ingresó", label: "Ingresó" },
+  { value: "Salió", label: "Salió" },
   { value: "Expirado", label: "Expirado" },
   { value: "Cancelado", label: "Cancelado" },
 ];
@@ -69,6 +73,14 @@ export const DEMO_INDICADORES_MAPA = [
   { value: "Mantenimiento", label: "Zona de mantenimiento", color: "#22c55e" },
 ];
 
+export const DEMO_ESTADOS_QR = [
+  { value: "Activo", label: "Activo", activo: true },
+  { value: "Vencido", label: "Vencido", activo: false },
+  { value: "Cancelado", label: "Cancelado", activo: false },
+  { value: "Usado", label: "Usado", activo: false },
+  { value: "Pendiente", label: "Pendiente", activo: false },
+];
+
 export const DEMO_ESTADOS = {
   comunes: DEMO_ESTADOS_COMUNES,
   prioridades: DEMO_PRIORIDADES,
@@ -81,5 +93,6 @@ export const DEMO_ESTADOS = {
   invitados: DEMO_ESTADOS_INVITADO,
   servicios: DEMO_ESTADOS_SERVICIO,
   amenidades: DEMO_ESTADOS_AMENIDAD,
+  qrPersonales: DEMO_ESTADOS_QR,
   indicadoresMapa: DEMO_INDICADORES_MAPA,
 };

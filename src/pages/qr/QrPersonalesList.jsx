@@ -1,111 +1,185 @@
 // src/pages/qr/QRPersonalList.jsx
 import { useEffect, useMemo, useState } from "react";
 import { UsuariosAPI } from "../../services/usuarios.api";
+import InvitadosAPI from "../../services/invitados.api";
 import QRPersonalAPI from "../../services/qrPersonal.api";
+import {
+  confirmAction,
+  showError,
+  showSuccess,
+} from "../../utils/swal";
+import QrPersonalForm from "./QrPersonalForm";
 
 export default function QRPersonalList() {
-  const [rows, setRows] = useState([]); // { usuario, qr }
+  const [qrs, setQrs] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [invitados, setInvitados] = useState([]);
+  const [estados, setEstados] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [estado, setEstado] = useState("todos"); // todos | activos | inactivos
+  const [estado, setEstado] = useState("todos");
+  const [openForm, setOpenForm] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [formMode, setFormMode] = useState("create");
 
-  // Cargar usuarios + QR personal
+  const loadData = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [qrList, usuariosList, invitadosList, estadosList] =
+        await Promise.all([
+          QRPersonalAPI.list(),
+          UsuariosAPI.list(),
+          InvitadosAPI.getAll(),
+          QRPersonalAPI.getEstados(),
+        ]);
+
+      setQrs(Array.isArray(qrList) ? qrList : []);
+      setUsuarios(Array.isArray(usuariosList) ? usuariosList : []);
+      setInvitados(Array.isArray(invitadosList) ? invitadosList : []);
+      setEstados(Array.isArray(estadosList) ? estadosList : []);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudieron cargar los QR personales.");
+      showError("Error", "Ocurrió un problema al procesar el código QR.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        // 🔁 Ajusta al método real de tu API (list, getAll, etc.)
-        const usuarios = await UsuariosAPI.list();
-
-        // Traer QR de cada usuario (si tiene)
-        const qrResults = await Promise.all(
-          usuarios.map((u) =>
-            QRPersonalAPI.getByUsuario(u.usuarioID).catch(() => null)
-          )
-        );
-
-        const merged = usuarios.map((u, idx) => ({
-          usuario: u,
-          qr: qrResults[idx],
-        }));
-
-        setRows(merged);
-      } catch (err) {
-        console.error(err);
-        setError("No se pudieron cargar los usuarios y sus QR.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
+    loadData();
   }, []);
 
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const { usuario, qr } = row;
+    const term = search.trim().toLowerCase();
 
-      const fullName = [
-        usuario.nombre,
-        usuario.apellidoPaterno,
-        usuario.apellidoMaterno,
+    return qrs.filter((qr) => {
+      const text = [
+        qr.codigoQR,
+        qr.usuarioNombre,
+        qr.invitadoNombre,
+        qr.tipoQR,
+        qr.descripcion,
+        qr.estado,
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
-      const matchSearch =
-        !search ||
-        fullName.includes(search.toLowerCase()) ||
-        (qr?.codigoQR || "").toLowerCase().includes(search.toLowerCase());
-
-      const matchEstado =
-        estado === "todos"
-          ? true
-          : estado === "activos"
-          ? qr?.activo === true
-          : qr?.activo === false;
-
+      const matchSearch = !term || text.includes(term);
+      const matchEstado = estado === "todos" || qr.estado === estado;
       return matchSearch && matchEstado;
     });
-  }, [rows, search, estado]);
+  }, [qrs, search, estado]);
 
-  const handleToggleEstado = async (row) => {
-    if (!row.qr) return;
-    const nuevoEstado = !row.qr.activo;
+  const openCreate = () => {
+    setSelected(null);
+    setFormMode("create");
+    setOpenForm(true);
+  };
+
+  const openView = (qr) => {
+    setSelected(qr);
+    setFormMode("view");
+    setOpenForm(true);
+  };
+
+  const openEdit = (qr) => {
+    setSelected(qr);
+    setFormMode("edit");
+    setOpenForm(true);
+  };
+
+  const closeForm = () => {
+    setSelected(null);
+    setFormMode("create");
+    setOpenForm(false);
+  };
+
+  const handleSubmitForm = async (values) => {
+    if (formMode === "view") return;
+
     try {
-      await QRPersonalAPI.actualizarEstado(row.qr.qrid, nuevoEstado);
-      setRows((prev) =>
-        prev.map((r) =>
-          r.qr?.qrid === row.qr.qrid
-            ? { ...r, qr: { ...r.qr, activo: nuevoEstado } }
-            : r
-        )
-      );
+      setSaving(true);
+      setError("");
+
+      if (formMode === "edit" && selected?.qrid) {
+        await QRPersonalAPI.update(selected.qrid, values);
+        await showSuccess("QR actualizado", "Los cambios se guardaron correctamente.");
+      } else {
+        await QRPersonalAPI.create(values);
+        await showSuccess("QR generado", "El código QR se generó correctamente.");
+      }
+
+      closeForm();
+      await loadData();
     } catch (err) {
       console.error(err);
-      alert("No se pudo actualizar el estado del QR.");
+      setError(err?.message || "No se pudo guardar el QR.");
+      showError("Error", "Ocurrió un problema al procesar el código QR.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleRegenerar = async (row) => {
+  const handleCancel = async (qr) => {
+    const result = await confirmAction({
+      title: "¿Cancelar QR?",
+      text: "El código quedará cancelado dentro de la demo.",
+      confirmButtonText: "Sí, cancelar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!result.isConfirmed) return;
+
     try {
-      const resp = await QRPersonalAPI.generar(row.usuario.usuarioID);
-      // si el backend devuelve el QR generado, actualizamos
-      if (resp) {
-        setRows((prev) =>
-          prev.map((r) =>
-            r.usuario.usuarioID === row.usuario.usuarioID
-              ? { ...r, qr: resp }
-              : r
-          )
-        );
-      }
+      setSaving(true);
+      await QRPersonalAPI.cancelar(qr.qrid);
+      await loadData();
+      await showSuccess("QR cancelado", "El código QR fue cancelado correctamente.");
     } catch (err) {
       console.error(err);
-      alert("No se pudo generar el QR.");
+      showError("Error", "Ocurrió un problema al procesar el código QR.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemove = async (qr) => {
+    const result = await confirmAction({
+      title: "¿Eliminar QR?",
+      text: "Esta acción eliminará el código QR de la demo.",
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      setSaving(true);
+      await QRPersonalAPI.remove(qr.qrid);
+      await loadData();
+      await showSuccess("QR eliminado", "El código QR se eliminó correctamente.");
+    } catch (err) {
+      console.error(err);
+      showError("Error", "Ocurrió un problema al procesar el código QR.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRenew = async (qr) => {
+    try {
+      setSaving(true);
+      await QRPersonalAPI.renew(qr.qrid, 12);
+      await loadData();
+      await showSuccess("QR actualizado", "La vigencia se renovó correctamente.");
+    } catch (err) {
+      console.error(err);
+      showError("Error", "Ocurrió un problema al procesar el código QR.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -113,195 +187,224 @@ export default function QRPersonalList() {
     if (!value) return "-";
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
-    return d.toLocaleString();
+    return d.toLocaleDateString("es-MX");
+  };
+
+  const badgeEstado = (value = "Pendiente") => {
+    const cls =
+      value === "Activo"
+        ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+        : value === "Cancelado"
+        ? "bg-red-100 text-red-700 border-red-200"
+        : value === "Vencido"
+        ? "bg-slate-100 text-slate-600 border-slate-200"
+        : value === "Usado"
+        ? "bg-blue-100 text-blue-700 border-blue-200"
+        : "bg-amber-100 text-amber-700 border-amber-200";
+
+    return (
+      <span
+        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${cls}`}
+      >
+        {value}
+      </span>
+    );
   };
 
   return (
-    <div className="px-4 md:px-8 pb-10">
-      {/* Título principal */}
+    <div className="px-4 pb-10 md:px-8">
       <header className="pt-6 pb-4">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900">
+        <h1 className="text-2xl font-extrabold text-slate-900 md:text-3xl">
           Administración de QR personales
         </h1>
-        <p className="mt-1 text-slate-500 max-w-3xl">
-          Desde aquí puedes revisar, generar y cambiar el estado de los códigos
-          QR personales que usan los residentes para acceder al fraccionamiento.
+        <p className="mt-1 max-w-3xl text-slate-500">
+          Revisa códigos personales, invitados y accesos temporales sin generar
+          imágenes QR pesadas en el listado.
         </p>
       </header>
 
-      {/* Banner verde, igual estilo que reportes */}
       <section className="mb-6">
-        <div className="bg-emerald-600 text-white rounded-3xl px-6 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
+        <div className="flex flex-col gap-4 rounded-3xl bg-emerald-600 px-6 py-5 text-white shadow-sm md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-xl font-bold">QR personales de acceso</h2>
-            <p className="text-emerald-100 text-sm md:text-base">
-              Consulta el estado de los QR y regenera códigos en caso de
-              extravío o cambio de dispositivo.
+            <p className="text-sm text-emerald-100 md:text-base">
+              La tabla muestra datos principales; el QR visual se renderiza solo
+              al abrir el detalle.
             </p>
           </div>
           <button
             type="button"
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/30 text-sm font-semibold hover:bg-white/20 transition-colors"
+            onClick={openCreate}
+            className="inline-flex items-center justify-center rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20"
           >
-            <span className="text-lg">⟳</span>
-            <span>Recargar</span>
+            + Nuevo QR
           </button>
         </div>
       </section>
 
-      {/* Filtros de búsqueda */}
-      <section className="mb-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-        <div className="flex-1">
-          <input
-            type="text"
-            placeholder="Buscar por nombre de usuario o código QR..."
-            className="w-full rounded-full border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-2">
-          <select
-            className="rounded-full border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            value={estado}
-            onChange={(e) => setEstado(e.target.value)}
-          >
-            <option value="todos">Todos los estados</option>
-            <option value="activos">Solo activos</option>
-            <option value="inactivos">Solo inactivos</option>
-          </select>
-        </div>
+      <section className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <input
+          type="text"
+          placeholder="Buscar por código, usuario, invitado o estado..."
+          className="w-full rounded-full border border-slate-200 px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          value={estado}
+          onChange={(e) => setEstado(e.target.value)}
+        >
+          <option value="todos">Todos los estados</option>
+          {estados.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
       </section>
 
-      {/* Tabla principal estilo finanzas */}
-      <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {/* Encabezado verde */}
-        <div className="bg-emerald-700 text-white text-xs md:text-sm font-semibold px-4 md:px-6 py-3 flex">
-          <div className="w-1/4">Usuario</div>
-          <div className="w-1/5">Código QR</div>
-          <div className="w-1/5">Vigencia</div>
-          <div className="w-1/12 text-center">Estado</div>
-          <div className="flex-1 text-right pr-2">Acciones</div>
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
         </div>
+      )}
 
-        {loading ? (
-          <div className="px-4 md:px-6 py-6 text-sm text-slate-500">
-            Cargando usuarios y QR...
-          </div>
-        ) : error ? (
-          <div className="px-4 md:px-6 py-6 text-sm text-red-600">{error}</div>
-        ) : filteredRows.length === 0 ? (
-          <div className="px-4 md:px-6 py-6 text-sm text-slate-500">
-            No se encontraron usuarios con los filtros seleccionados.
-          </div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {filteredRows.map((row) => {
-              const { usuario, qr } = row;
-              const fullName = [
-                usuario.nombre,
-                usuario.apellidoPaterno,
-                usuario.apellidoMaterno,
-              ]
-                .filter(Boolean)
-                .join(" ");
-
-              return (
-                <li
-                  key={usuario.usuarioID}
-                  className="px-4 md:px-6 py-3 text-xs md:text-sm hover:bg-emerald-50/70 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    {/* Usuario */}
-                    <div className="w-1/4 min-w-[140px]">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1120px] w-full table-auto text-sm text-slate-700">
+            <thead className="bg-emerald-700 text-white">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Código
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Titular
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Tipo
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Vigencia
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Usos
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Estado
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold md:text-sm">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                    Cargando QR...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                    No se encontraron QR con los filtros seleccionados.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((qr) => (
+                  <tr
+                    key={qr.qrid}
+                    className="transition-colors hover:bg-emerald-50/70"
+                  >
+                    <td className="px-4 py-3 text-xs font-mono">{qr.codigoQR}</td>
+                    <td className="px-4 py-3">
                       <div className="font-medium text-slate-800">
-                        {fullName || `Usuario #${usuario.usuarioID}`}
+                        {qr.usuarioNombre || qr.invitadoNombre || "-"}
                       </div>
-                      <div className="text-[11px] text-slate-500">
-                        ID: {usuario.usuarioID}
-                      </div>
-                    </div>
-
-                    {/* Código QR */}
-                    <div className="w-1/5 min-w-[110px]">
-                      {qr ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
-                          {qr.codigoQR}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">
-                          Sin QR generado
-                        </span>
+                      {qr.invitadoNombre && (
+                        <div className="text-xs text-slate-500">
+                          Invitado: {qr.invitadoNombre}
+                        </div>
                       )}
-                    </div>
-
-                    {/* Vigencia */}
-                    <div className="w-1/5 min-w-[160px] text-[11px] text-slate-600">
-                      {qr ? (
-                        <>
-                          <div>
-                            <span className="font-semibold">Desde:</span>{" "}
-                            {formatDate(qr.fechaGeneracion)}
-                          </div>
-                          <div>
-                            <span className="font-semibold">Hasta:</span>{" "}
-                            {formatDate(qr.fechaVencimiento)}
-                          </div>
-                        </>
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-
-                    {/* Estado */}
-                    <div className="w-1/12 text-center min-w-[80px]">
-                      {qr ? (
-                        <span
-                          className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                            qr.activo
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-slate-200 text-slate-700"
-                          }`}
-                        >
-                          {qr.activo ? "Activo" : "Inactivo"}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">-</span>
-                      )}
-                    </div>
-
-                    {/* Acciones */}
-                    <div className="flex-1 flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleRegenerar(row)}
-                        className="inline-flex items-center px-3 py-1.5 rounded-full bg-emerald-600 text-white text-[11px] md:text-xs font-semibold hover:bg-emerald-700"
-                      >
-                        {qr ? "Regenerar QR" : "Generar QR"}
-                      </button>
-
-                      {qr && (
+                    </td>
+                    <td className="px-4 py-3">{qr.tipoQR}</td>
+                    <td className="px-4 py-3 text-center text-xs">
+                      <div>Desde: {formatDate(qr.fechaInicio)}</div>
+                      <div>Hasta: {formatDate(qr.fechaVencimiento)}</div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {qr.usosRealizados}
+                      {qr.usosPermitidos ? ` / ${qr.usosPermitidos}` : " / ∞"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {badgeEstado(qr.estado)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => handleToggleEstado(row)}
-                          className={`inline-flex items-center px-3 py-1.5 rounded-full text-[11px] md:text-xs font-semibold ${
-                            qr.activo
-                              ? "bg-amber-500 hover:bg-amber-600 text-white"
-                              : "bg-slate-500 hover:bg-slate-600 text-white"
-                          }`}
+                          onClick={() => openView(qr)}
+                          className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                          disabled={saving}
                         >
-                          {qr.activo ? "Desactivar" : "Activar"}
+                          Ver QR
                         </button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                        <button
+                          type="button"
+                          onClick={() => openEdit(qr)}
+                          className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-orange-600"
+                          disabled={saving || ["Cancelado", "Usado"].includes(qr.estado)}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRenew(qr)}
+                          className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                          disabled={saving || qr.estado === "Cancelado"}
+                        >
+                          Renovar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancel(qr)}
+                          className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700"
+                          disabled={saving || qr.estado === "Cancelado"}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(qr)}
+                          className="rounded-full bg-red-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-800"
+                          disabled={saving}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
+
+      {openForm && (
+        <QrPersonalForm
+          open={openForm}
+          onClose={closeForm}
+          onSubmit={handleSubmitForm}
+          initial={selected}
+          usuarios={usuarios}
+          invitados={invitados}
+          estados={estados}
+          saving={saving}
+          mode={formMode}
+        />
+      )}
     </div>
   );
 }

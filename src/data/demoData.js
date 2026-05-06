@@ -2,6 +2,8 @@ import { DEMO_TIPOS_USUARIO, DEMO_USERS } from "./modules/usuarios.data";
 import { createDemoAvisos } from "./modules/avisos.data";
 import { createDemoAmenidades } from "./modules/amenidades.data";
 import { createDemoReservas } from "./modules/reservas.data";
+import { createDemoInvitados } from "./modules/invitados.data";
+import { createDemoQrPersonales } from "./modules/qrPersonales.data";
 import {
   DEMO_CATALOGOS,
   DEMO_CATEGORIAS_AVISO,
@@ -21,6 +23,7 @@ import {
   DEMO_ESTADOS_PAGO,
   DEMO_ESTADOS_REPORTE,
   DEMO_ESTADOS_RESERVA,
+  DEMO_ESTADOS_QR,
   DEMO_ESTADOS_SERVICIO,
   DEMO_ESTADOS_USUARIO,
   DEMO_INDICADORES_MAPA,
@@ -31,11 +34,15 @@ import {
 const DEMO_AVISOS = createDemoAvisos(DEMO_CATEGORIAS_AVISO);
 const DEMO_AMENIDADES = createDemoAmenidades(DEMO_TIPOS_AMENIDAD);
 const DEMO_RESERVAS = createDemoReservas();
+const DEMO_INVITADOS = createDemoInvitados();
+const DEMO_QR_PERSONALES = createDemoQrPersonales();
 
 export {
   DEMO_AMENIDADES,
   DEMO_CATALOGOS,
   DEMO_AVISOS,
+  DEMO_INVITADOS,
+  DEMO_QR_PERSONALES,
   DEMO_RESERVAS,
   DEMO_CATEGORIAS_AVISO,
   DEMO_ESTADOS,
@@ -46,6 +53,7 @@ export {
   DEMO_ESTADOS_PAGO,
   DEMO_ESTADOS_REPORTE,
   DEMO_ESTADOS_RESERVA,
+  DEMO_ESTADOS_QR,
   DEMO_ESTADOS_SERVICIO,
   DEMO_ESTADOS_USUARIO,
   DEMO_INDICADORES_MAPA,
@@ -67,6 +75,8 @@ export const DEMO_DATA = {
   avisos: DEMO_AVISOS,
   amenidades: DEMO_AMENIDADES,
   reservas: DEMO_RESERVAS,
+  invitados: DEMO_INVITADOS,
+  qrPersonales: DEMO_QR_PERSONALES,
   catalogos: DEMO_CATALOGOS,
   estados: DEMO_ESTADOS,
 };
