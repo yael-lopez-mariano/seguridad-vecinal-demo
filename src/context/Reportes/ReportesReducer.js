@@ -8,11 +8,16 @@ import {
   GET_REPORTE_ERROR,
   GET_REPORTES_USUARIO_SUCCESS,
   GET_TIPOS_REPORTE_SUCCESS,
+  GET_ESTADOS_REPORTE_SUCCESS,
+  GET_PRIORIDADES_REPORTE_SUCCESS,
   CREATE_REPORTE_REQUEST,
   CREATE_REPORTE_SUCCESS,
   CREATE_REPORTE_ERROR,
   MARCAR_VISTO_SUCCESS,
   CAMBIAR_ANONIMATO_SUCCESS,
+  UPDATE_REPORTE_SUCCESS,
+  DELETE_REPORTE_SUCCESS,
+  CHANGE_ESTADO_REPORTE_SUCCESS,
   CLEAR_ERROR,
 } from "./ActionsTypes";
 
@@ -21,9 +26,24 @@ export const initialState = {
   reportesUsuario: [],
   reporteActual: null,
   tiposReporte: [],
+  estadosReporte: [],
+  prioridadesReporte: [],
   loading: false,
   error: null,
 };
+
+const mergeReporte = (state, payload) => ({
+  ...state,
+  loading: false,
+  reportes: state.reportes.map((r) =>
+    r.reporteID === payload.reporteID ? payload : r
+  ),
+  reporteActual:
+    state.reporteActual &&
+    state.reporteActual.reporteID === payload.reporteID
+      ? payload
+      : state.reporteActual,
+});
 
 export default function ReportesReducer(state, action) {
   switch (action.type) {
@@ -63,6 +83,18 @@ export default function ReportesReducer(state, action) {
         tiposReporte: action.payload,
       };
 
+    case GET_ESTADOS_REPORTE_SUCCESS:
+      return {
+        ...state,
+        estadosReporte: action.payload,
+      };
+
+    case GET_PRIORIDADES_REPORTE_SUCCESS:
+      return {
+        ...state,
+        prioridadesReporte: action.payload,
+      };
+
     case CREATE_REPORTE_SUCCESS:
       return {
         ...state,
@@ -71,34 +103,27 @@ export default function ReportesReducer(state, action) {
         reportes: [action.payload, ...state.reportes],
       };
 
+    case UPDATE_REPORTE_SUCCESS:
+    case CHANGE_ESTADO_REPORTE_SUCCESS:
+      return mergeReporte(state, action.payload);
+
     case MARCAR_VISTO_SUCCESS:
-      return {
-        ...state,
-        reportes: state.reportes.map((r) =>
-          r.reporteID === action.payload ? { ...r, visto: true } : r
-        ),
-        reporteActual:
-          state.reporteActual &&
-          state.reporteActual.reporteID === action.payload
-            ? { ...state.reporteActual, visto: true }
-            : state.reporteActual,
-      };
+      return mergeReporte(state, action.payload);
 
     case CAMBIAR_ANONIMATO_SUCCESS:
+      return mergeReporte(state, action.payload);
+
+    case DELETE_REPORTE_SUCCESS:
       return {
         ...state,
-        reportes: state.reportes.map((r) =>
-          r.reporteID === action.payload.id
-            ? { ...r, esAnonimo: action.payload.esAnonimo }
-            : r
+        loading: false,
+        reportes: state.reportes.filter(
+          (r) => r.reporteID !== Number(action.payload)
         ),
         reporteActual:
           state.reporteActual &&
-          state.reporteActual.reporteID === action.payload.id
-            ? {
-                ...state.reporteActual,
-                esAnonimo: action.payload.esAnonimo,
-              }
+          state.reporteActual.reporteID === Number(action.payload)
+            ? null
             : state.reporteActual,
       };
 

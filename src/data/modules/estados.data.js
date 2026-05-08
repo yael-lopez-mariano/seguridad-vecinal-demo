@@ -37,8 +37,11 @@ export const DEMO_METODOS_PAGO = [
 ];
 
 export const DEMO_ESTADOS_REPORTE = [
-  { value: "pendiente", label: "Pendiente", visto: false },
-  { value: "atendido", label: "Atendido", visto: true },
+  { value: "Pendiente", label: "Pendiente", visto: false },
+  { value: "En revision", label: "En revision", visto: false },
+  { value: "Resuelto", label: "Resuelto", visto: true },
+  { value: "Cancelado", label: "Cancelado", visto: true },
+  { value: "Rechazado", label: "Rechazado", visto: true },
 ];
 
 export const DEMO_ESTADOS_ALERTA = [

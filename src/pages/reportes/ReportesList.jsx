@@ -1,359 +1,482 @@
 // src/pages/reportes/ReportesList.jsx
-import { useEffect, useMemo, useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
-import ConfirmModal from "../../components/modals/ConfirmModal";
+import { useContext, useEffect, useMemo, useState } from "react";
 import ReportesContext from "../../context/Reportes/ReportesContext";
+import { UsuariosAPI } from "../../services/usuarios.api";
+import {
+  confirmAction,
+  showError,
+  showSuccess,
+  showWarning,
+} from "../../utils/swal";
+import ReporteForm from "./ReporteForm";
 
 const Badge = ({ children, className = "" }) => (
   <span
-    className={
-      "px-2.5 py-1.5 text-sm font-semibold rounded-full border " + className
-    }
+    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}
   >
     {children}
   </span>
 );
 
-const EstadoBadge = ({ visto }) =>
-  visto ? (
-    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">
-      Atendido
-    </Badge>
-  ) : (
-    <Badge className="bg-amber-50 text-amber-700 border-amber-200">
-      Pendiente
-    </Badge>
-  );
+const estadoClass = (estado) => {
+  const value = String(estado || "Pendiente").toLowerCase();
+  if (value === "resuelto" || value === "atendido") {
+    return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  }
+  if (value === "en revision" || value === "en revisión") {
+    return "bg-blue-100 text-blue-700 border-blue-200";
+  }
+  if (value === "cancelado" || value === "rechazado") {
+    return "bg-red-100 text-red-700 border-red-200";
+  }
+  return "bg-amber-100 text-amber-700 border-amber-200";
+};
 
-const TipoBadge = ({ tipo }) => {
-  const map =
-    {
-      Robo: "bg-rose-50 text-rose-700 border-rose-200",
-      Vandalismo: "bg-indigo-50 text-indigo-700 border-indigo-200",
-      Incidente: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    }[tipo] || "bg-slate-50 text-slate-700 border-slate-200";
-  return <Badge className={map}>{tipo || "Tipo"}</Badge>;
+const prioridadClass = (prioridad) => {
+  const value = String(prioridad || "Media").toLowerCase();
+  if (value === "alta" || value === "critica" || value === "crítica") {
+    return "bg-red-100 text-red-700 border-red-200";
+  }
+  if (value === "media") return "bg-amber-100 text-amber-700 border-amber-200";
+  return "bg-emerald-50 text-emerald-700 border-emerald-200";
+};
+
+const normalizeSearch = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const validationMessage = (values) => {
+  if (!values.titulo?.trim()) return "Falta capturar el titulo.";
+  if (!values.descripcion?.trim()) return "Falta capturar la descripcion.";
+  if (!values.tipoReporteID) return "Falta seleccionar el tipo de reporte.";
+  if (!values.prioridad) return "Falta seleccionar la prioridad.";
+  if (!values.estado) return "Falta seleccionar el estado.";
+  if (!values.esAnonimo && !values.usuarioID) {
+    return "Falta seleccionar el residente.";
+  }
+  if (!values.direccionTexto?.trim()) return "Falta capturar la ubicacion.";
+  if (
+    Number.isNaN(Number(values.latitud)) ||
+    Number.isNaN(Number(values.longitud))
+  ) {
+    return "Las coordenadas deben ser validas.";
+  }
+  if (
+    values.fechaCreacion &&
+    Number.isNaN(new Date(values.fechaCreacion).getTime())
+  ) {
+    return "La fecha del reporte no es valida.";
+  }
+  return "";
 };
 
 export default function ReportesList() {
-  const nav = useNavigate();
-
   const {
     reportes,
     tiposReporte,
+    estadosReporte,
+    prioridadesReporte,
     loading,
     error,
     fetchReportes,
     fetchTiposReporte,
-    marcarVisto,
-    cambiarAnonimato,
+    fetchEstadosReporte,
+    fetchPrioridadesReporte,
+    createReporte,
+    updateReporte,
+    removeReporte,
+    cambiarEstado,
   } = useContext(ReportesContext);
 
-  // modal de confirmación
-  const [confirm, setConfirm] = useState({
-    open: false,
-    title: "",
-    message: "",
-    confirmText: "Confirmar",
-    onConfirm: null,
-  });
-
-  // Filtros UI
+  const [usuarios, setUsuarios] = useState([]);
+  const [saving, setSaving] = useState(false);
   const [q, setQ] = useState("");
-  const [tipo, setTipo] = useState("all");
-  const [estado, setEstado] = useState("all"); // all | pendiente | atendido
+  const [tipo, setTipo] = useState("");
+  const [estado, setEstado] = useState("");
+  const [formMode, setFormMode] = useState("create");
+  const [selected, setSelected] = useState(null);
+  const [openForm, setOpenForm] = useState(false);
 
-  const fetchAll = async () => {
-    await Promise.all([fetchReportes(), fetchTiposReporte()]);
+  const loadData = async () => {
+    try {
+      const [, , , , usuariosData] = await Promise.all([
+        fetchReportes(),
+        fetchTiposReporte(),
+        fetchEstadosReporte(),
+        fetchPrioridadesReporte(),
+        UsuariosAPI.list(),
+      ]);
+      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+    } catch (err) {
+      console.error(err);
+      showError("Error", "Ocurrió un problema al procesar el reporte.");
+    }
   };
 
   useEffect(() => {
-    fetchAll();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
+    const term = normalizeSearch(q.trim());
     return reportes
+      .filter((r) => {
+        if (!term) return true;
+        const fullText = normalizeSearch(
+          `${r.titulo} ${r.descripcion} ${r.nombreUsuario} ${r.direccionTexto} ${r.tipoReporte} ${r.prioridad} ${r.estado}`
+        );
+        return fullText.includes(term);
+      })
       .filter((r) =>
-        q.trim()
-          ? `${r.titulo} ${r.descripcion} ${r.nombreUsuario} ${r.direccionTexto} ${r.tipoReporte}`
-              .toLowerCase()
-              .includes(q.toLowerCase())
-          : true
+        tipo ? Number(r.tipoReporteID) === Number(tipo) : true
       )
-      .filter((r) => (tipo === "all" ? true : r.tipoReporteID === Number(tipo)))
-      .filter((r) =>
-        estado === "all" ? true : estado === "pendiente" ? !r.visto : r.visto
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.fechaCreacion).getTime() -
-          new Date(a.fechaCreacion).getTime()
-      );
+      .filter((r) => (estado ? r.estado === estado : true));
   }, [reportes, q, tipo, estado]);
 
-  // Helpers para abrir/cerrar modal
-  const openConfirm = (payload) => setConfirm({ ...payload, open: true });
-  const closeConfirm = () => setConfirm((c) => ({ ...c, open: false }));
-
-  // Acciones (se invocan DESPUÉS de confirmar)
-  const doMarcarVisto = async (id, newValue) => {
-    await marcarVisto(id, newValue);
-    // El contexto actualiza la lista
+  const closeForm = () => {
+    setSelected(null);
+    setFormMode("create");
+    setOpenForm(false);
   };
 
-  const doToggleAnon = async (id, newValue) => {
-    await cambiarAnonimato(id, newValue);
-    // El contexto actualiza la lista
+  const openCreate = () => {
+    setSelected(null);
+    setFormMode("create");
+    setOpenForm(true);
   };
 
-  // Handlers que abren el modal
-  const onMarcarVisto = (r) => {
-    const newVal = !r.visto;
-    openConfirm({
-      title: newVal ? "Marcar como atendido" : "Marcar como pendiente",
-      message: `¿Confirmas cambiar el estado del reporte “${r.titulo}” a ${
-        newVal ? "Atendido" : "Pendiente"
-      }?`,
-      confirmText: "Sí, confirmar",
-      onConfirm: async () => {
-        try {
-          await doMarcarVisto(r.reporteID, newVal);
-        } catch (e) {
-          alert(e.message || "No se pudo actualizar el estado");
-        } finally {
-          closeConfirm();
-        }
-      },
+  const openView = (reporte) => {
+    setSelected(reporte);
+    setFormMode("view");
+    setOpenForm(true);
+  };
+
+  const openEdit = (reporte) => {
+    setSelected(reporte);
+    setFormMode("edit");
+    setOpenForm(true);
+  };
+
+  const handleSubmit = async (values) => {
+    const message = validationMessage(values);
+    if (message) {
+      await showWarning("Datos incompletos", message);
+      return;
+    }
+
+    try {
+      setSaving(true);
+      if (formMode === "edit" && selected?.reporteID) {
+        await updateReporte(selected.reporteID, values);
+        await showSuccess(
+          "Reporte actualizado",
+          "Los cambios se guardaron correctamente."
+        );
+      } else {
+        await createReporte(values);
+        await showSuccess(
+          "Reporte registrado",
+          "El reporte se agregó correctamente."
+        );
+      }
+      closeForm();
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      if (err?.message) {
+        await showWarning("Datos incompletos", err.message);
+      } else {
+        await showError("Error", "Ocurrió un problema al procesar el reporte.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (reporte) => {
+    const result = await confirmAction({
+      title: "¿Eliminar reporte?",
+      text: "Esta acción modificará el reporte dentro de la demo.",
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
     });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setSaving(true);
+      await removeReporte(reporte.reporteID);
+      await loadData();
+      await showSuccess(
+        "Reporte eliminado",
+        "El reporte se actualizó correctamente."
+      );
+    } catch (err) {
+      console.error(err);
+      await showError("Error", "Ocurrió un problema al procesar el reporte.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const onToggleAnon = (r) => {
-    const newVal = !r.esAnonimo;
-    openConfirm({
-      title: newVal ? "Hacer anónimo" : "Quitar anonimato",
-      message: `¿Deseas ${
-        newVal ? "ocultar" : "mostrar"
-      } los datos del usuario en “${r.titulo}”?`,
-      confirmText: "Sí, confirmar",
-      onConfirm: async () => {
-        try {
-          await doToggleAnon(r.reporteID, newVal);
-        } catch (e) {
-          alert(e.message || "No se pudo cambiar el anonimato");
-        } finally {
-          closeConfirm();
-        }
-      },
+  const handleEstado = async (reporte, nextEstado) => {
+    const successTitle =
+      nextEstado === "Resuelto" ? "Reporte resuelto" : "Reporte en revisión";
+    const result = await confirmAction({
+      title:
+        nextEstado === "Resuelto"
+          ? "¿Marcar como resuelto?"
+          : "¿Marcar en revisión?",
+      text: "Esta acción modificará el reporte dentro de la demo.",
+      confirmButtonText:
+        nextEstado === "Resuelto" ? "Sí, resolver" : "Sí, cambiar",
+      cancelButtonText: "Cancelar",
     });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setSaving(true);
+      await cambiarEstado(reporte.reporteID, nextEstado);
+      await loadData();
+      await showSuccess(successTitle, "El reporte se actualizó correctamente.");
+    } catch (err) {
+      console.error(err);
+      await showError("Error", "Ocurrió un problema al procesar el reporte.");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const isClosed = (reporte) =>
+    ["Resuelto", "Cancelado", "Rechazado"].includes(reporte.estado);
 
   return (
-    <div className="p-5 md:p-7">
-      {/* Card de encabezado VERDE */}
-      <div className="rounded-2xl shadow-sm mb-5 border border-[#10B981] bg-[#10B981] text-white">
-        <div className="px-5 md:px-7 py-5 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">
-              Reportes de la comunidad
-            </h1>
-            <p className="opacity-90 text-base mt-0.5">
-              Revisa, atiende y marca el estado de los reportes enviados por
-              vecinos.
-            </p>
-          </div>
+    <div className="p-4 md:p-6">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-800">
+            Reportes de la comunidad
+          </h1>
+          <p className="text-sm text-slate-500">
+            Revisa, atiende y cambia el estado de los reportes enviados por los
+            vecinos.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            placeholder="Buscar por titulo, residente, ubicacion..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-80"
+          />
           <button
-            onClick={fetchAll}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/40 px-4 py-2.5 text-base font-medium
-                       bg-white/10 text-white hover:bg-white/10
-                       active:scale-95 transition
-                       focus:outline-none focus:ring-2 focus:ring-white/40"
-            title="Recargar"
+            type="button"
+            onClick={openCreate}
+            disabled={loading}
+            className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
           >
-            <svg
-              className="w-5 h-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                d="M21 12a9 9 0 1 1-3-6.7"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M21 3v6h-6"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            Recargar
+            + Nuevo reporte
           </button>
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-        <div className="md:col-span-2">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por título, descripción, dirección o usuario…"
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
+      <div className="mb-4 flex flex-wrap gap-2">
         <select
-          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-emerald-500"
           value={tipo}
           onChange={(e) => setTipo(e.target.value)}
+          className="min-w-[180px] rounded-full border border-slate-300 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
-          <option value="all">Todos los tipos</option>
-          {tiposReporte.map((t) => (
-            <option key={t.tipoReporteID} value={t.tipoReporteID}>
-              {t.nombre}
+          <option value="">Todos los tipos</option>
+          {tiposReporte.map((item) => (
+            <option key={item.tipoReporteID} value={item.tipoReporteID}>
+              {item.nombre}
             </option>
           ))}
         </select>
+
         <select
-          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-emerald-500"
           value={estado}
           onChange={(e) => setEstado(e.target.value)}
+          className="min-w-[180px] rounded-full border border-slate-300 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
-          <option value="all">Todos los estados</option>
-          <option value="pendiente">Pendiente</option>
-          <option value="atendido">Atendido</option>
+          <option value="">Todos los estados</option>
+          {estadosReporte.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
         </select>
+
+        <button
+          type="button"
+          onClick={loadData}
+          className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+        >
+          Recargar
+        </button>
       </div>
 
-      {/* Contenido */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
-        {loading ? (
-          <div className="p-10 grid place-items-center">
-            <div className="animate-spin h-7 w-7 border-2 border-slate-300 border-t-transparent rounded-full" />
-          </div>
-        ) : error ? (
-          <div className="p-6 text-rose-600 text-base">{error}</div>
-        ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-base">
-            No hay reportes con los filtros actuales.
-          </div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {filtered.map((r) => (
-              <li
-                key={r.reporteID}
-                className="p-5 md:p-6 transition rounded-xl
-                           hover:bg-emerald-50 hover:border hover:border-emerald-200"
-              >
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  {/* Izquierda */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <h3 className="text-lg md:text-xl font-semibold text-slate-800">
-                        {r.titulo}
-                      </h3>
-                      <EstadoBadge visto={r.visto} />
-                      <TipoBadge tipo={r.tipoReporte} />
-                      {r.esAnonimo ? (
-                        <Badge className="bg-slate-50 text-slate-700 border-slate-200">
-                          Anónimo
-                        </Badge>
-                      ) : null}
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div className="mb-4 text-sm text-slate-500">Cargando reportes...</div>
+      )}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1180px] w-full table-auto text-sm text-slate-700">
+            <thead className="bg-emerald-700 text-white">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Reporte
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Tipo
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Residente
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold md:text-sm">
+                  Ubicacion
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Prioridad
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Estado
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold md:text-sm">
+                  Fecha
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold md:text-sm">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.length === 0 && !loading && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-4 py-6 text-center text-sm text-slate-500"
+                  >
+                    No hay reportes registrados.
+                  </td>
+                </tr>
+              )}
+
+              {filtered.map((reporte) => (
+                <tr
+                  key={reporte.reporteID}
+                  className="transition-colors hover:bg-emerald-50/70"
+                >
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-800">
+                      {reporte.titulo}
                     </div>
-
-                    <p className="mt-1 text-base text-slate-700 line-clamp-2">
-                      {r.descripcion}
-                    </p>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-base text-slate-600">
-                      <span className="inline-flex items-center gap-1.5">
-                        <svg
-                          className="w-5 h-5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                        >
-                          <path
-                            d="M12 2C8.1 2 5 5.1 5 9c0 5.3 7 13 7 13s7-7.7 7-13c0-3.9-3.1-7-7-7Z"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                          <circle cx="12" cy="9" r="2" />
-                        </svg>
-                        {r.direccionTexto}
-                      </span>
-                      <span>•</span>
-                      <span>{new Date(r.fechaCreacion).toLocaleString()}</span>
-                      {r.nombreUsuario && (
-                        <>
-                          <span>•</span>
-                          <span>Por: {r.nombreUsuario}</span>
-                        </>
-                      )}
+                    <div className="mt-1 line-clamp-2 max-w-sm text-xs text-slate-500">
+                      {reporte.descripcion}
                     </div>
-                  </div>
-
-                  {/* Botonera */}
-                  <div className="flex items-center gap-2.5">
-                    {/* Detalle */}
-                    <button
-                      onClick={() => nav(`/admin/reportes/${r.reporteID}`)}
-                      className="px-4 py-2.5 text-base rounded-xl border border-[#047857]
-                                 bg-[#047857] text-white
-                                 active:scale-95 transition
-                                 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                      title="Ver detalle"
-                    >
-                      Detalle
-                    </button>
-
-                    {/* Estado */}
-                    <button
-                      onClick={() => onMarcarVisto(r)}
-                      className={`px-4 py-2.5 text-base rounded-xl border active:scale-95 transition
-                                  focus:outline-none focus:ring-2 focus:ring-emerald-300
-                                  ${
-                                    r.visto
-                                      ? "border-[#10B981] bg-[#10B981] text-white"
-                                      : "border-[#FBBF24] bg-[#FBBF24] text-[#111827]"
-                                  }`}
-                      title="Cambiar estado"
-                    >
-                      {r.visto ? "Marcar como pendiente" : "Marcar atendido"}
-                    </button>
-
-                    {/* (Des)Anonimizar */}
-                    <button
-                      onClick={() => onToggleAnon(r)}
-                      className="px-4 py-2.5 text-base rounded-xl border border-[#F97316]
-                                 bg-[#F97316] text-white
-                                 active:scale-95 transition
-                                 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                      title="Alternar anonimato"
-                    >
-                      {r.esAnonimo ? "Quitar anonimato" : "Hacer anónimo"}
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                  </td>
+                  <td className="px-4 py-3">{reporte.tipoReporte || "-"}</td>
+                  <td className="px-4 py-3">
+                    {reporte.esAnonimo ? (
+                      <Badge className="bg-slate-100 text-slate-600 border-slate-200">
+                        Anonimo
+                      </Badge>
+                    ) : (
+                      reporte.nombreUsuario || "-"
+                    )}
+                  </td>
+                  <td className="px-4 py-3">{reporte.direccionTexto || "-"}</td>
+                  <td className="px-4 py-3 text-center">
+                    <Badge className={prioridadClass(reporte.prioridad)}>
+                      {reporte.prioridad || "Media"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <Badge className={estadoClass(reporte.estado)}>
+                      {reporte.estado || "Pendiente"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-center text-xs text-slate-600">
+                    {reporte.fechaCreacion
+                      ? new Date(reporte.fechaCreacion).toLocaleDateString()
+                      : "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openView(reporte)}
+                        className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                        disabled={saving}
+                      >
+                        Ver
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(reporte)}
+                        className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-orange-600"
+                        disabled={saving || isClosed(reporte)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleEstado(reporte, "En revision")}
+                        className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                        disabled={saving || reporte.estado === "En revision" || isClosed(reporte)}
+                      >
+                        En revision
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleEstado(reporte, "Resuelto")}
+                        className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                        disabled={saving || reporte.estado === "Resuelto"}
+                      >
+                        Resuelto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(reporte)}
+                        className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700"
+                        disabled={saving}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Modal de confirmación */}
-      <ConfirmModal
-        open={confirm.open}
-        title={confirm.title}
-        message={confirm.message}
-        confirmText={confirm.confirmText}
-        onConfirm={confirm.onConfirm}
-        onClose={closeConfirm}
-        cancelText="Cancelar"
-      />
+      {openForm && (
+        <ReporteForm
+          initial={selected}
+          usuarios={usuarios}
+          tiposReporte={tiposReporte}
+          estados={estadosReporte}
+          prioridades={prioridadesReporte}
+          saving={saving}
+          mode={formMode}
+          onClose={closeForm}
+          onSubmit={handleSubmit}
+        />
+      )}
     </div>
   );
 }

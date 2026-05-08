@@ -13,11 +13,16 @@ import {
   GET_REPORTE_ERROR,
   GET_REPORTES_USUARIO_SUCCESS,
   GET_TIPOS_REPORTE_SUCCESS,
+  GET_ESTADOS_REPORTE_SUCCESS,
+  GET_PRIORIDADES_REPORTE_SUCCESS,
   CREATE_REPORTE_REQUEST,
   CREATE_REPORTE_SUCCESS,
   CREATE_REPORTE_ERROR,
   MARCAR_VISTO_SUCCESS,
   CAMBIAR_ANONIMATO_SUCCESS,
+  UPDATE_REPORTE_SUCCESS,
+  DELETE_REPORTE_SUCCESS,
+  CHANGE_ESTADO_REPORTE_SUCCESS,
   CLEAR_ERROR,
 } from "./ActionsTypes";
 
@@ -80,6 +85,24 @@ export default function ReportesState({ children }) {
     }
   };
 
+  const fetchEstadosReporte = async () => {
+    try {
+      const data = await ReportesAPI.getEstados();
+      dispatch({ type: GET_ESTADOS_REPORTE_SUCCESS, payload: data });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchPrioridadesReporte = async () => {
+    try {
+      const data = await ReportesAPI.getPrioridades();
+      dispatch({ type: GET_PRIORIDADES_REPORTE_SUCCESS, payload: data });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const createReporte = async (data) => {
     dispatch({ type: CREATE_REPORTE_REQUEST });
     try {
@@ -96,17 +119,43 @@ export default function ReportesState({ children }) {
     }
   };
 
+  const updateReporte = async (id, data) => {
+    dispatch({ type: CREATE_REPORTE_REQUEST });
+    try {
+      const updated = await ReportesAPI.update(id, data);
+      dispatch({ type: UPDATE_REPORTE_SUCCESS, payload: updated });
+      return updated;
+    } catch (err) {
+      console.error(err);
+      dispatch({
+        type: CREATE_REPORTE_ERROR,
+        payload: err.message || "Error al actualizar el reporte",
+      });
+      throw err;
+    }
+  };
+
+  const removeReporte = async (id) => {
+    await ReportesAPI.remove(id);
+    dispatch({ type: DELETE_REPORTE_SUCCESS, payload: id });
+  };
+
+  const cambiarEstado = async (id, estado) => {
+    const updated = await ReportesAPI.cambiarEstado(id, estado);
+    dispatch({ type: CHANGE_ESTADO_REPORTE_SUCCESS, payload: updated });
+    return updated;
+  };
+
   const marcarVisto = async (id, visto = true) => {
-    await ReportesAPI.marcarVisto(id, visto);
-    dispatch({ type: MARCAR_VISTO_SUCCESS, payload: id });
+    const updated = await ReportesAPI.marcarVisto(id, visto);
+    dispatch({ type: MARCAR_VISTO_SUCCESS, payload: updated });
+    return updated;
   };
 
   const cambiarAnonimato = async (id, esAnonimo) => {
-    await ReportesAPI.setAnonimato(id, esAnonimo);
-    dispatch({
-      type: CAMBIAR_ANONIMATO_SUCCESS,
-      payload: { id, esAnonimo },
-    });
+    const updated = await ReportesAPI.setAnonimato(id, esAnonimo);
+    dispatch({ type: CAMBIAR_ANONIMATO_SUCCESS, payload: updated });
+    return updated;
   };
 
   // --------------- PROVIDER ------------------
@@ -120,7 +169,12 @@ export default function ReportesState({ children }) {
         fetchReporteById,
         fetchReportesByUsuario,
         fetchTiposReporte,
+        fetchEstadosReporte,
+        fetchPrioridadesReporte,
         createReporte,
+        updateReporte,
+        removeReporte,
+        cambiarEstado,
         marcarVisto,
         cambiarAnonimato,
       }}
